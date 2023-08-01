@@ -12,7 +12,7 @@ from .code_file_manager import CodeFileManager
 from .config_manager import ConfigManager, mentat_dir_path
 from .conversation import Conversation
 from .git_handler import get_shared_git_root_for_paths
-from .llm_api import CostTracker, count_tokens, setup_api_key
+from .llm_api import CostTracker, setup_api_key
 from .logging_config import setup_logging
 from .user_input_manager import UserInputManager
 
@@ -57,7 +57,7 @@ def run(paths: Iterable[str], exclude_paths: Optional[Iterable[str]] = None):
     try:
         loop(paths, exclude_paths, cost_tracker)
     except (EOFError, KeyboardInterrupt) as e:
-        print(e)
+        cprint("\n" + str(e), color="red")
     finally:
         cost_tracker.display_total_cost()
 
@@ -69,7 +69,6 @@ def loop(
 ) -> None:
     git_root = get_shared_git_root_for_paths(paths)
     config = ConfigManager(git_root)
-    conv = Conversation(config, cost_tracker)
     user_input_manager = UserInputManager(config)
     code_file_manager = CodeFileManager(
         paths,
@@ -78,9 +77,8 @@ def loop(
         config,
         git_root,
     )
+    conv = Conversation(config, cost_tracker, code_file_manager)
 
-    tokens = count_tokens(code_file_manager.get_code_message())
-    cprint(f"\nFile token count: {tokens}", "cyan")
     cprint("Type 'q' or use Ctrl-C to quit at any time.\n", color="cyan")
     cprint("What can I do for you?", color="light_blue")
     need_user_request = True
@@ -88,7 +86,7 @@ def loop(
         if need_user_request:
             user_response = user_input_manager.collect_user_input()
             conv.add_user_message(user_response)
-        explanation, code_changes = conv.get_model_response(code_file_manager, config)
+        explanation, code_changes = conv.get_model_response(config)
 
         if code_changes:
             need_user_request = get_user_feedback_on_changes(
