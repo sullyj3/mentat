@@ -14,10 +14,13 @@ class CodeChangeAction(Enum):
     Delete = "delete"
     CreateFile = "create-file"
     DeleteFile = "delete-file"
+    RenameFile = "rename-file"
 
     def has_surrounding_lines(self):
         return (
-            self != CodeChangeAction.CreateFile and self != CodeChangeAction.DeleteFile
+            self != CodeChangeAction.CreateFile
+            and self != CodeChangeAction.DeleteFile
+            and self != CodeChangeAction.RenameFile
         )
 
     def has_removals(self):
@@ -94,6 +97,10 @@ class CodeChange:
                 case CodeChangeAction.Delete:
                     self.first_changed_line = self.json_data["start-line"]
                     self.last_changed_line = self.json_data["end-line"]
+
+                case CodeChangeAction.RenameFile:
+                    self.name = self.json_data["name"]
+
         except KeyError:
             self.error = "Line numbers not given"
 
@@ -104,24 +111,29 @@ class CodeChange:
         ):
             self.error = "Starting line of change is greater than ending line of change"
 
-        if self.action != CodeChangeAction.CreateFile:
-            file_path = os.path.join(self.git_root, self.file)
-            try:
-                self.file_lines = code_file_manager.file_lines[file_path]
-                self.line_number_buffer = len(str(len(self.file_lines) + 1)) + 1
-            except KeyError:
-                self.error = (
-                    f"Model attempted to edit {file_path}, which isn't in current"
-                    " context or doesn't exist"
-                )
-        else:
+        if self.action == CodeChangeAction.CreateFile:
             if os.path.exists(self.file):
                 self.error = (
                     f"Model attempted to create file that already exists: {self.file}"
                 )
-
             self.file_lines = []
             self.line_number_buffer = 2
+        else:
+            if self.action == CodeChangeAction.RenameFile and os.path.exists(self.name):
+                self.error = (
+                    f"Model attempted to rename file {self.file} to a file that"
+                    f" already exists: {self.name}"
+                )
+
+            abs_path = os.path.join(self.git_root, self.file)
+            try:
+                self.file_lines = code_file_manager.file_lines[abs_path]
+                self.line_number_buffer = len(str(len(self.file_lines) + 1)) + 1
+            except KeyError:
+                self.error = (
+                    f"Model attempted to edit {self.file}, which isn't in current"
+                    " context or doesn't exist"
+                )
 
     def __lt__(self, other):
         return self.last_changed_line < other.last_changed_line
@@ -143,7 +155,7 @@ class CodeChange:
                 following_lines = cur_file_lines[self.last_changed_line :]
                 new_file_lines = previous_lines + following_lines
 
-            case CodeChangeAction.CreateFile | CodeChangeAction.DeleteFile:
+            case CodeChangeAction.CreateFile | CodeChangeAction.DeleteFile | CodeChangeAction.RenameFile:
                 raise Exception(
                     f"CodeChange with action={self.action} shouldn't have apply called"
                 )

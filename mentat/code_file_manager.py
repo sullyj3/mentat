@@ -196,18 +196,29 @@ class CodeFileManager:
 
         return "\n".join(code_message)
 
+    def _add_file(self, rel_path):
+        logging.info(f"Adding new file {rel_path} to context")
+        self.file_paths.append(rel_path)
+        # create any missing directories in the path
+        os.makedirs(os.path.dirname(rel_path), exist_ok=True)
+        with open(rel_path, "w") as _:
+            pass
+
+    def _delete_file(self, abs_path):
+        logging.info(f"Deleting file {abs_path}")
+        self.file_paths.remove(abs_path)
+        os.remove(abs_path)
+
     def _handle_delete(self, delete_change):
-        file_path = os.path.join(self.git_root, delete_change.file)
-        if not os.path.exists(file_path):
-            logging.error(f"Path {file_path} non-existent on delete")
+        abs_path = os.path.join(self.git_root, delete_change.file)
+        if not os.path.exists(abs_path):
+            logging.error(f"Path {abs_path} non-existent on delete")
             return
 
         cprint(f"Are you sure you want to delete {delete_change.file}?", "red")
         if self.user_input_manager.ask_yes_no(default_yes=False):
-            logging.info(f"Deleting file {file_path}")
             cprint(f"Deleting {delete_change.file}...")
-            self.file_paths.remove(file_path)
-            os.remove(file_path)
+            self._delete_file(abs_path)
         else:
             cprint(f"Not deleting {delete_change.file}")
 
@@ -264,6 +275,11 @@ class CodeFileManager:
                 files_to_write[rel_path] = code_change.code_lines
             elif code_change.action == CodeChangeAction.DeleteFile:
                 self._handle_delete(code_change)
+            elif code_change.action == CodeChangeAction.RenameFile:
+                abs_path = os.path.join(self.git_root, rel_path)
+                code_lines = self.file_lines[abs_path]
+                files_to_write[code_change.name] = code_lines
+                self._delete_file(abs_path)
             else:
                 file_changes[rel_path].append(code_change)
 
@@ -275,10 +291,6 @@ class CodeFileManager:
         for rel_path, code_lines in files_to_write.items():
             file_path = os.path.join(self.git_root, rel_path)
             if file_path not in self.file_paths:
-                # newly created files added to Mentat's context
-                logging.info(f"Adding new file {file_path} to context")
-                self.file_paths.append(file_path)
-                # create any missing directories in the path
-                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                self._add_file(rel_path)
             with open(file_path, "w") as f:
                 f.write("\n".join(code_lines))
