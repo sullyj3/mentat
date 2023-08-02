@@ -200,7 +200,9 @@ class CodeFileManager:
         logging.info(f"Adding new file {rel_path} to context")
         self.file_paths.append(rel_path)
         # create any missing directories in the path
-        os.makedirs(os.path.dirname(rel_path), exist_ok=True)
+        dir_name = os.path.dirname(rel_path)
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
         with open(rel_path, "w") as _:
             pass
 
